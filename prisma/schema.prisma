@@ -1,0 +1,224 @@
+// Prisma Schema for IgamaZi - Consent-based People Information & Verification Directory
+// Datasource: SQLite (local, zero config, easily migratable to PostgreSQL)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String    @id @default(uuid())
+  email            String    @unique
+  passwordHash     String
+  fullName         String
+  country          String    @default("Nigeria")
+  role             String    @default("USER") // USER, MODERATOR, ADMIN, SUPER_ADMIN
+  status           String    @default("ACTIVE") // ACTIVE, SUSPENDED, DELETED
+  termsAcceptedAt  DateTime  @default(now())
+  privacyConsentAt DateTime  @default(now())
+  emailVerified    Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  profile          Profile?
+  sessions         Session[]
+  auditLogs        AuditLog[]
+  reportsFiled     Report[]  @relation("ReporterUser")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Profile {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  displayName     String
+  headline        String?  // e.g. "Senior Cloud Security Architect at Fintech Corp"
+  bio             String?
+  profession      String?
+  organization    String?
+  industry        String?
+  city            String?
+  country         String?  @default("Nigeria")
+  phone           String?
+  email           String?  // Public contact email if user chooses to disclose
+  profilePhotoUrl String?
+  isSearchable    Boolean  @default(true)
+  completionScore Int      @default(30)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  privacy              ProfilePrivacy?
+  experiences          Experience[]
+  educations           Education[]
+  skills               Skill[]
+  publicLinks          PublicLink[]
+  verificationRequests VerificationRequest[]
+  verifications        Verification[]
+  reportsReceived      Report[]              @relation("ReportedProfile")
+  contactMessages      ContactMessage[]
+  receivedRecommendations Recommendation[]   @relation("ReceivedRecommendations")
+  authoredRecommendations Recommendation[]   @relation("AuthoredRecommendations")
+}
+
+model ProfilePrivacy {
+  id                   String  @id @default(uuid())
+  profileId            String  @unique
+  overallVisibility    String  @default("PUBLIC") // PUBLIC, REGISTERED_ONLY, PRIVATE
+  emailVisibility      String  @default("PRIVATE") // PRIVATE, REGISTERED_ONLY, PUBLIC
+  phoneVisibility      String  @default("PRIVATE") // PRIVATE, REGISTERED_ONLY, PUBLIC
+  locationVisibility   String  @default("CITY_ONLY") // CITY_ONLY, COUNTRY_ONLY, EXACT, HIDDEN
+  experienceVisibility String  @default("PUBLIC") // PUBLIC, REGISTERED_ONLY, PRIVATE
+  educationVisibility  String  @default("PUBLIC") // PUBLIC, REGISTERED_ONLY, PRIVATE
+  skillsVisibility     String  @default("PUBLIC") // PUBLIC, REGISTERED_ONLY, PRIVATE
+  linksVisibility      String  @default("PUBLIC") // PUBLIC, REGISTERED_ONLY, PRIVATE
+  allowContactForm     Boolean @default(true)
+
+  profile              Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model Experience {
+  id          String   @id @default(uuid())
+  profileId   String
+  title       String
+  company     String
+  industry    String?
+  startDate   String
+  endDate     String?
+  isCurrent   Boolean  @default(false)
+  description String?
+  createdAt   DateTime @default(now())
+
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model Education {
+  id           String   @id @default(uuid())
+  profileId    String
+  institution  String
+  degree       String
+  fieldOfStudy String?
+  startYear    Int
+  endYear      Int?
+  createdAt    DateTime @default(now())
+
+  profile      Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model Skill {
+  id        String  @id @default(uuid())
+  profileId String
+  name      String
+  category  String? @default("General")
+
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model PublicLink {
+  id        String  @id @default(uuid())
+  profileId String
+  platform  String  // LinkedIn, GitHub, Portfolio, Website, Twitter, Substack
+  url       String
+
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model VerificationRequest {
+  id           String    @id @default(uuid())
+  profileId    String
+  userId       String
+  type         String    // IDENTITY, PROFESSION, ORGANIZATION
+  status       String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  evidenceText String
+  documentUrl  String?
+  adminNotes   String?
+  reviewedBy   String?
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  profile      Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model Verification {
+  id               String   @id @default(uuid())
+  profileId        String
+  type             String   // IDENTITY, PROFESSION, ORGANIZATION, EMAIL
+  badgeLabel       String   // e.g. "Identity Verified", "Certified Professional", "Verified Organization Leader"
+  verifiedAt       DateTime @default(now())
+  verifiedByAdminId String?
+
+  profile          Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model Report {
+  id                String   @id @default(uuid())
+  reporterUserId    String?
+  reportedProfileId String
+  category          String   // INCORRECT_INFO, IMPERSONATION, HARASSMENT, FRAUD, UNAUTHORIZED_INFO, OFFENSIVE_CONTENT, OTHER
+  details           String
+  status            String   @default("PENDING") // PENDING, INVESTIGATING, RESOLVED, DISMISSED
+  actionTaken       String?
+  resolvedBy        String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  reporter          User?    @relation("ReporterUser", fields: [reporterUserId], references: [id], onDelete: SetNull)
+  reportedProfile   Profile  @relation("ReportedProfile", fields: [reportedProfileId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorUserId String?
+  action      String   // LOGIN, LOGOUT, PROFILE_UPDATE, PRIVACY_CHANGE, VERIFICATION_REQUEST, REPORT_FILED, ADMIN_ACTION
+  entityType  String
+  entityId    String
+  ipAddress   String?
+  detailsJson String?
+  createdAt   DateTime @default(now())
+
+  actor       User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+}
+
+model ContactMessage {
+  id                 String    @id @default(uuid())
+  recipientProfileId String
+  senderName         String
+  senderEmail        String
+  subject            String
+  message            String
+  replyMessage       String?
+  repliedAt          DateTime?
+  isRead             Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+
+  recipient          Profile   @relation(fields: [recipientProfileId], references: [id], onDelete: Cascade)
+}
+
+model Recommendation {
+  id                 String   @id @default(uuid())
+  recipientProfileId String
+  authorProfileId    String
+  relationship       String   // e.g. "Worked together directly", "Managed directly", "Reported to", "Client / Partner", "Professional Peer"
+  content            String
+  status             String   @default("PENDING") // PENDING, APPROVED, HIDDEN, REJECTED
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  recipient          Profile  @relation("ReceivedRecommendations", fields: [recipientProfileId], references: [id], onDelete: Cascade)
+  author             Profile  @relation("AuthoredRecommendations", fields: [authorProfileId], references: [id], onDelete: Cascade)
+}
+
